@@ -478,7 +478,6 @@
 	 */
 	var Frame = function(element, config) {
 		this.element = element;
-		this.magnification = false;
 
 		this.config = util.extend({
 			zoom: true,
@@ -520,7 +519,7 @@
 		onMouseWheel: function(e) {
 			var delta = Math.max(-1, Math.min(1, -e.deltaY));
 
-			if ( !this.magnification && this.config.zoom ) {
+			if ( this.config.zoom ) {
 				this.zoom(e.pageX, e.pageY, false, delta);
 
 				e.preventDefault();
@@ -560,7 +559,7 @@
 		 */
 		onMouseMove: function(e) {
 			if ( this.dragging ) {
-				var t = this.limit(e);
+				var t = this.pan(e);
 
 				this.applyTransform(this.getTransform(), t);
 
@@ -601,18 +600,77 @@
 			x = x || this.elRect.width * 0.5;
 			y = y || this.elRect.height * 0.5;
 
-			var transform = this.getTransform();
-			var magnifier = new Magnifier(transform, x, y, this.elRect, delta, magnitude, this.config.limitToFrame);
+			// current scale
+			var ps = this.transform.getScale();
+			// new scale
+			var ns = magnitude || ps + delta/10;
 
-			this.setMagnification(magnifier);
-			transform = magnifier.magnify();
-			this.applyTransform(transform);
-			this.setTransform(transform);
-			this.setMagnification();
+			// scale limits
+			var ms = 20;
+			if ( ns < 1 ) {
+				ns = 1;
+			} else if ( ns > ms ) {
+				ns = ms;
+			}
+			// current cursor position on image
+			var ix = (x - this.elRect.left).toFixed(2);
+			var iy = (y - this.elRect.top).toFixed(2);
+
+			// previous cursor position on image
+			var px = (this.transform.getOriginX() * ps).toFixed(2);
+			var py = (this.transform.getOriginY() * ps).toFixed(2);
+
+			// previous magnify frame translate
+			var tx = this.transform.getTranslateX();
+			var ty = this.transform.getTranslateY();
+
+			// set origin to current cursor position
+			var nx = ix / ps;
+			var ny = iy / ps;
+
+			// Magnify frame to current cursor position
+			if ((Math.abs(ix-px)>1 || Math.abs(iy-py)>1) && ps < ms) {
+				tx += (ix-px)*(1-1/ps);
+				ty += (iy-py)*(1-1/ps);
+			}
+
+			// Magnify on previous cursor position
+			else if(ps != 1 || ix != px && iy != py) {
+				nx = px / ps;
+				ny = py / ps;
+			}
+
+			// Constrain
+			if( delta <= 0 && (this.config.limitToFrame || ns == 1) ) {
+				var w = this.elRect.width;
+				var h = this.elRect.height;
+
+				// x-axis
+				if( tx + nx + ( w - nx ) * ns <= w ) {
+					tx = 0;
+					nx = w;
+				} else if ( tx + nx * ( 1 - ns ) >= 0 ) {
+					tx = 0;
+					nx = 0;
+				}
+
+				// y-axis
+				if( ty + ny + ( h - ny ) * ns <= h ) {
+					ty = 0;
+					ny = h;
+				} else if ( ty + ny * ( 1 - ns ) >= 0 ) {
+					ty = 0;
+					ny = 0;
+				}
+			}
+			
+			this.transform = new Transform(nx, ny, tx, ty, ns, this.elRect);
+
+			this.applyTransform();
 
 			this.elRect = util.getBoundingRect(this.element);
 
-			this.emit("frame.zoom", delta, transform);
+			this.emit("frame.zoom", delta);
 		},
 
 		/**
@@ -641,20 +699,11 @@
 		},
 
 		/**
-		 * Magnification / scale setter
-		 * @param {Number} z
-		 */
-		setMagnification: function(z) {
-			z = z || false;
-			this.magnification = z;
-		},
-
-		/**
-		 * Limit panning to frame
+		 * Panning
 		 * @param  {Event} e Mouse Event
 		 * @return {Object}
 		 */
-		limit: function(e) {
+		pan: function(e) {
 			var pr = this.ptRect;
 			var er = this.elRect;
 
@@ -692,10 +741,10 @@
 		 */
 		applyTransform: function(t, o) {
 			var matrix;
-			var scale = t.getScale().toFixed(1);
-			var x = t.getTranslateX();
-			var y = t.getTranslateY();
-			var origin = [ t.getOriginX().toFixed(10), t.getOriginY().toFixed(10), 0 ];
+			var scale = this.transform.getScale().toFixed(1);
+			var x = this.transform.getTranslateX();
+			var y = this.transform.getTranslateY();
+			var origin = [ this.transform.getOriginX().toFixed(10), this.transform.getOriginY().toFixed(10), 0 ];
 
 			// Panning
 			if ( o ) {
@@ -703,7 +752,7 @@
 				y += o.y;
 			}
 
-			matrix = ["matrix(" + t.getScale().toFixed(1)];
+			matrix = ["matrix(" + this.transform.getScale().toFixed(1)];
 			matrix.push(0);
 			matrix.push(0);
 			matrix.push(scale);
@@ -714,104 +763,6 @@
 				"transform-origin": origin.join("px "),
 				"transform": matrix.join(",")
 			});
-		}
-	};
-
-	/**
-	 * Creates a new Magnifier for calculating transformations
-	 * @param {Object} t            Transform
-	 * @param {Number} x            The x offset
-	 * @param {Number} y            The y offset
-	 * @param {Object} rect         DOMRect
-	 * @param {Number} delta        Zoom in or out
-	 * @param {Number} magnitude    Zoom magnitude
-	 * @param {Boolean} limitToFrame Limit zooming to current frame
-	 */
-	function Magnifier(t, x, y, rect, delta, magnitude, limitToFrame){
-		this.frame = t;
-		this.rects = rect;
-		this.mouse = { x: x, y: y };
-		this.delta = delta;
-		this.magnitude = magnitude;
-		this.limitToFrame = limitToFrame;
-	}
-
-	/**
-	 * Magnifier prototype
-	 * @type {Object}
-	 */
-	Magnifier.prototype = {
-		/**
-		 * Calculate the transformations
-		 * @return {Object} new Transform
-		 */
-		magnify: function() {
-
-			// current scale
-			var ps = this.frame.getScale();
-			// new scale
-			var ns = this.magnitude || ps + this.delta/10;
-
-			// scale limits
-			var ms = 20;
-			if ( ns < 1 ) {
-				ns = 1;
-			} else if ( ns > ms ) {
-				ns = ms;
-			}
-			// current cursor position on image
-			var ix = (this.mouse.x - this.rects.left).toFixed(2);
-			var iy = (this.mouse.y - this.rects.top).toFixed(2);
-
-			// previous cursor position on image
-			var px = (this.frame.getOriginX() * ps).toFixed(2);
-			var py = (this.frame.getOriginY() * ps).toFixed(2);
-
-			// previous magnify frame translate
-			var tx = this.frame.getTranslateX();
-			var ty = this.frame.getTranslateY();
-
-			// set origin to current cursor position
-			var nx = ix / ps;
-			var ny = iy / ps;
-
-			// Magnify frame to current cursor position
-			if ((Math.abs(ix-px)>1 || Math.abs(iy-py)>1) && ps < ms) {
-				tx += (ix-px)*(1-1/ps);
-				ty += (iy-py)*(1-1/ps);
-			}
-
-			// Magnify on previous cursor position
-			else if(ps != 1 || ix != px && iy != py) {
-				nx = px / ps;
-				ny = py / ps;
-			}
-
-			// on zoom-out limit frame shifts to original frame
-			if( this.delta <= 0 && (this.limitToFrame || ns == 1) ) {
-					var w = this.rects.width;
-					var h = this.rects.height;
-
-					// x-axis
-					if( tx + nx + ( w - nx ) * ns <= w ) {
-						tx = 0;
-						nx = w;
-					} else if ( tx + nx * ( 1 - ns ) >= 0 ) {
-						tx = 0;
-						nx = 0;
-					}
-
-					// y-axis
-					if( ty + ny + ( h - ny ) * ns <= h ) {
-						ty = 0;
-						ny = h;
-					} else if ( ty + ny * ( 1 - ns ) >= 0 ) {
-						ty = 0;
-						ny = 0;
-					}
-				}
-
-			return new Transform(nx, ny, tx, ty, ns, this.rects);
 		}
 	};
 
@@ -1000,7 +951,23 @@
 					x: e.offsetX,
 					y: e.offsetY
 				};
+				
+				var scale = this.frame.getTransform().getScale();
+				
+				var x = (e.pageX - this.rect.left) - (this.window.rect.width * 0.5);
+				var y = (e.pageY - this.rect.top) - (this.window.rect.height * 0.5);
 
+
+				// Update window
+				util.css(this.window.node, {
+					transform: "translate3d(" + x + "px, " + y + "px, 0px)"
+				});
+
+				util.css(this.labels[0].node, {
+					width: this.window.rect.width,
+					top: -this.labels[0].rect.height,
+					transform: "translate3d(" + x + "px, " + y + "px, 0px)"
+				});
 				this.setClip();
 			}, this);
 		}
@@ -1085,20 +1052,6 @@
 			r = l + this.window.rect.width / scale;
 			b = t + this.window.rect.height / scale;
 
-			x = (l * scale) - dx;
-			y = (t * scale) - dy;
-
-			// Update window
-			util.css(this.window.node, {
-				transform: "translate3d(" + x + "px, " + y + "px, 0px)"
-			});
-
-			util.css(this.labels[0].node, {
-				width: this.window.rect.width,
-				top: -this.labels[0].rect.height,
-				transform: "translate3d(" + x + "px, " + y + "px, 0px)"
-			});
-
 		} else {
 			t = 0;
 			l = 0;
@@ -1118,10 +1071,11 @@
 	 * @param  {[type]} transform Current frame transformation data
 	 * @return {Void}
 	 */
-	Differential.prototype.onZoom = function(delta, transform) {
+	Differential.prototype.onZoom = function(delta) {
 		var compare = this;
+		var transform = this.frame.getTransform();
 
-		this.container.classList.toggle("pan", transform.scale > 1);
+		this.container.classList.toggle("pan", transform.getScale() > 1);
 		this.container.classList.toggle("zoom-in", delta > 0);
 
 		if ( transform.scale > 1) {
