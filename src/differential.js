@@ -5,7 +5,7 @@
  * Copyright (c) 2017 Karl Saunders (http://mobiuswebdesign.co.uk)
  * Licensed under MIT (http://www.opensource.org/licenses/mit-license.php)
  *
- * Version: 0.0.1
+ * Version: 0.0.2
  *
  */
 
@@ -578,7 +578,7 @@
 
 				var current = this.getTransform();
 
-				var t = this.limit(e);
+				var t = this.pan(e);
 
 				current.transX += t.x;
 				current.transY += t.y;
@@ -1001,8 +1001,6 @@
 
 			var transform = this.frame.getTransform();
 			this.frame.applyTransform(transform);
-			this.frame.setTransform(transform);
-			this.frame.setMagnification();
 
 			this.setClip();
 			this.setLabels();
