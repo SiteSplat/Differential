@@ -5,7 +5,7 @@
  * Copyright (c) 2017 Karl Saunders (http://mobiuswebdesign.co.uk)
  * Licensed under MIT (http://www.opensource.org/licenses/mit-license.php)
  *
- * Version: 0.0.2
+ * Version: 0.0.3
  *
  */
 
@@ -663,7 +663,7 @@
 					ny = 0;
 				}
 			}
-			
+
 			this.transform = new Transform(nx, ny, tx, ty, ns, this.elRect);
 
 			this.applyTransform();
@@ -951,9 +951,7 @@
 					x: e.offsetX,
 					y: e.offsetY
 				};
-				
-				var scale = this.frame.getTransform().getScale();
-				
+
 				var x = (e.pageX - this.rect.left) - (this.window.rect.width * 0.5);
 				var y = (e.pageY - this.rect.top) - (this.window.rect.height * 0.5);
 
@@ -1036,12 +1034,8 @@
 		if ( this.config.type === "layered" ) return false;
 
 		// TODO: Remove reliance on getBoundingClientRect
-		var x, y, t, l ,r, b,
-				rect = util.getBoundingRect(this.imageWrapper),
-				scale = this.frame.getTransform().getScale();
+		var t, l ,r, b, scale = this.frame.getTransform().getScale();
 
-		var dx = (this.rect.left - rect.left);
-		var dy = (this.rect.top - rect.top);
 
 		if ( this.config.type === "hover" ) {
 
@@ -1051,9 +1045,11 @@
 			b = t + this.window.rect.height / scale;
 
 		} else {
+			var rect = util.getBoundingRect(this.imageWrapper);
+
 			t = 0;
 			l = 0;
-			r = (dx / scale) + ((this.handle.offset + this.handle.current + this.ratio) / scale);
+			r = ((this.rect.left - rect.left) / scale) + ((this.handle.offset + this.handle.current + this.ratio) / scale);
 			b = this.height;
 		}
 
