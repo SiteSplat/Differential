@@ -1,5 +1,5 @@
 # Differential
-An screenshot comparison library. Side-by-side, layered and hover comparison methods. No dependencies. Pre-release.
+A screenshot comparison library. Side-by-side, layered and hover comparison methods. No dependencies. Pre-release.
 
 [Demos](https://codepen.io/Mobius1/full/MmdvQM)
 
